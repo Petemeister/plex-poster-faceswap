@@ -1,0 +1,26 @@
+# Copy to docker-compose.yml, fill in the settings, put 2-3 photos of your face in ./faces, then:
+#   docker compose run --rm faceswap preview     # try 10 random posters, look in ./data/preview
+#   docker compose up -d                         # do the whole library, then keep checking for new items
+services:
+  faceswap:
+    build: .
+    container_name: plex-poster-faceswap
+    restart: unless-stopped
+    # user: "1000:1000"                       # optional: write files as your user instead of root
+    environment:
+      PLEX_URL: http://192.168.1.10:32400       # your Plex server
+      PLEX_TOKEN: your-plex-token               # see README: "Finding your Plex token"
+      LIBRARIES: both                           # movies | tv | both
+      FACE_TARGET: any                          # any | male | female
+      # Plex's media paths, mapped to where they are mounted in this container (below)
+      PATH_MAP: /movies=/media/movies,/tv=/media/tv
+      SCHEDULE_MINUTES: 60                      # check for new items every hour (0 = run once and stop)
+      THREADS: 2
+    volumes:
+      - ./faces:/faces:ro                       # your 2-3 face photos
+      - ./data:/data                            # models, original-poster backups, progress
+      - /path/to/your/movies:/media/movies      # same folders Plex uses (only needed to save poster.jpg there)
+      - /path/to/your/tv:/media/tv
+    # be gentle on the machine: a long first run won't starve Plex
+    cpus: 2
+    cpu_shares: 256

@@ -1,0 +1,16 @@
+# personal data - never commit
+.env
+faces/
+data/
+*.jpg
+*.jpeg
+*.png
+*.webp
+!docs/*.jpg
+# models are downloaded at runtime (non-commercial licences, see README)
+*.onnx
+# python
+__pycache__/
+*.pyc
+venv/
+.venv/
