@@ -26,7 +26,7 @@ command puts them all back.
 - 2–3 clear, front-facing photos of the face to swap in: good light, no sunglasses, face filling a good part of the
   frame, one person per photo
 - Docker (easiest), or Python 3.11 with pip
-- About 2.5 GB of free RAM while it runs, and ~1.2 GB of disk for the models
+- About 2.5 GB of free RAM while a pass runs (released again between scheduled passes), and ~1.2 GB of disk for the models
 
 ## Quick start (Docker)
 

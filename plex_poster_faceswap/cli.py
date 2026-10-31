@@ -7,7 +7,9 @@
   preview   swap a few random posters into DATA_DIR/preview without touching Plex or your media folders
 """
 import argparse
+import ctypes
 import fcntl
+import gc
 import hashlib
 import json
 import os
@@ -105,10 +107,19 @@ def select(items, title):
     return exact or [i for i in items if title.lower() in i.match.lower()]
 
 
+def free_memory():
+    """Hand freed memory back to the OS, so the models don't sit in RAM (or swap) between passes."""
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):  # not glibc
+        pass
+
+
 def cmd_run(cfg, plex, a, redo_title=None):
     from .swapper import Swapper
-    swapper = None
     while True:
+        swapper = None  # loaded only for passes with work, and dropped afterwards
         # a scheduled pass skips if a redo/restore is running; one-off commands wait for it
         with run_lock(cfg, wait=bool(redo_title) or not cfg.schedule_minutes) as got:
             if got:
@@ -138,6 +149,9 @@ def cmd_run(cfg, plex, a, redo_title=None):
                         log(f"[{n}/{len(todo)}] {item.title}: {msg} ({time.time() - t:.0f}s)")
         if redo_title or not cfg.schedule_minutes:
             return
+        if swapper:
+            del swapper
+            free_memory()
         time.sleep(cfg.schedule_minutes * 60)
 
 
