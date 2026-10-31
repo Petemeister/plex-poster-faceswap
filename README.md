@@ -54,6 +54,7 @@ The image is rebuilt for arm64 and amd64 on every change to this repo. To update
 ## Settings
 
 All settings are environment variables (in `docker-compose.yml`, or a `.env` file when running without Docker).
+`docker compose run --rm faceswap --help` lists them with their current values, plus all the commands.
 
 | Setting | Default | What it does |
 |---|---|---|

@@ -190,20 +190,70 @@ def cmd_preview(cfg, plex, a):
     log(f"preview images in {out}")
 
 
+SETTINGS = [  # (environment variable, default, what it does) - shown by --help with the current values
+    ("LIBRARIES", "movies", "movies | tv | both"),
+    ("LIBRARY_NAMES", "", "only these Plex libraries, comma-separated (empty = all)"),
+    ("FACE_TARGET", "any", "any = most prominent face; male | female = most prominent face of that gender"),
+    ("SCHEDULE_MINUTES", "0", "0 = one pass, then stop; N = keep checking for new items every N minutes"),
+    ("MIN_AGE_MINUTES", "30", "leave items alone until Plex has had them this long (so it has the real poster)"),
+    ("SAVE_LOCAL_POSTER", "true", "also save the poster as poster.jpg / seasonNN.jpg in the media folder"),
+    ("PATH_MAP", "", "Plex path=path here, comma-separated (only needed for SAVE_LOCAL_POSTER)"),
+    ("THREADS", "2", "CPU threads for the models"),
+    ("PLEX_URL", "", "required, e.g. http://192.168.1.10:32400"),
+    ("PLEX_TOKEN", "", "required"),
+    ("FACES_DIR", "/faces", "your 2-3 face photos"),
+    ("DATA_DIR", "/data", "models, original posters, progress"),
+]
+
+NOTES = """
+how it works:
+  Each pass swaps every poster not done yet. With SCHEDULE_MINUTES set it then waits and checks again, so after
+  the first full sweep it only picks up new items. Turning on another library (LIBRARIES, LIBRARY_NAMES) means
+  the next pass sweeps that whole library.
+  Settings only affect future swaps: posters already swapped, or left alone for having no usable face, are never
+  revisited. To apply a new setting to one, use `redo TITLE`. `restore` puts originals back for good: restored
+  posters are skipped by later runs too (until you `redo` them).
+  Don't like a swap? Pick another poster in Plex (Edit > Poster); nothing swaps it again unless you `redo` it.
+  One-off commands wait for a running pass to finish.
+
+examples (Docker):
+  docker compose run --rm faceswap status
+  docker compose run --rm faceswap preview --count 10
+  docker compose run --rm faceswap run --limit 20
+  docker compose run --rm faceswap redo "The Martian"
+  docker compose run --rm -e FACE_TARGET=female faceswap redo "Thelma & Louise"
+  docker compose run --rm faceswap restore --title "Alien"
+  docker compose run --rm faceswap COMMAND --help        options for one command
+"""
+
+
+def settings_help():
+    lines = ["settings (environment variables, with their current values here):"]
+    for name, default, what in SETTINGS:
+        value = os.environ.get(name, default)
+        if name == "PLEX_TOKEN":
+            value = "(set)" if value else "NOT SET"
+        lines.append(f"  {name} = {value or '-'}\n      {what}")
+    return "\n".join(lines) + "\n" + NOTES
+
+
 def main():
-    ap = argparse.ArgumentParser(prog="plex-poster-faceswap", description=__doc__,
+    ap = argparse.ArgumentParser(prog="plex-poster-faceswap", description=__doc__, epilog=settings_help(),
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p_run = sub.add_parser("run")
+    p_run = sub.add_parser("run", description="Swap every poster not done yet. With SCHEDULE_MINUTES set, "
+                           "keep checking for new items.")
     p_run.add_argument("--limit", type=int, help="stop after N posters")
     p_run.add_argument("--only", help="only titles containing this text")
-    p_redo = sub.add_parser("redo")
-    p_redo.add_argument("title")
-    p_res = sub.add_parser("restore")
+    p_redo = sub.add_parser("redo", description="Swap a film's or show's poster(s) again, even if done before. "
+                            "If you picked another poster in Plex, that one becomes the new original.")
+    p_redo.add_argument("title", help="film or show title; an exact match wins, otherwise any title containing it")
+    p_res = sub.add_parser("restore", description="Put the original posters back in Plex and the media folders.")
     p_res.add_argument("--title", help="only this title (default: everything)")
-    sub.add_parser("status")
-    p_pre = sub.add_parser("preview")
-    p_pre.add_argument("--count", type=int, default=10)
+    sub.add_parser("status", description="Show how many posters are swapped, left alone or failed.")
+    p_pre = sub.add_parser("preview", description="Swap random posters into DATA_DIR/preview to see the results. "
+                           "Nothing changes in Plex or your media folders.")
+    p_pre.add_argument("--count", type=int, default=10, help="how many posters (default 10)")
     a = ap.parse_args()
     cfg = config.load()
     a.library_names = {n.strip().lower() for n in os.environ.get("LIBRARY_NAMES", "").split(",") if n.strip()}
