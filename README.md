@@ -31,11 +31,11 @@ command puts them all back.
 ## Quick start (Docker)
 
 ```bash
-git clone https://github.com/Petemeister/plex-poster-faceswap.git
-cd plex-poster-faceswap
-cp docker-compose.example.yml docker-compose.yml   # then edit the settings in it
+mkdir plex-poster-faceswap && cd plex-poster-faceswap
+curl -fsSL -o docker-compose.yml \
+  https://raw.githubusercontent.com/Petemeister/plex-poster-faceswap/main/docker-compose.example.yml
+#   ...then edit the settings in docker-compose.yml
 mkdir faces && cp ~/Pictures/me-*.jpg faces/        # your 2-3 photos
-docker compose build
 
 # try it on 10 random posters first - this doesn't change anything in Plex
 docker compose run --rm faceswap preview
@@ -47,6 +47,9 @@ docker compose logs -f
 ```
 
 The first run downloads the models (about 1.2 GB) into `./data/models`.
+
+The image is rebuilt for arm64 and amd64 on every change to this repo. To update, run
+`docker compose pull && docker compose up -d` (or let Watchtower do it).
 
 ## Settings
 

@@ -3,7 +3,8 @@
 #   docker compose up -d                         # do the whole library, then keep checking for new items
 services:
   faceswap:
-    build: .
+    image: ghcr.io/petemeister/plex-poster-faceswap:latest   # built from this repo for arm64 and amd64
+    # build: .                                # ...or build it yourself from a clone
     container_name: plex-poster-faceswap
     restart: unless-stopped
     # user: "1000:1000"                       # optional: write files as your user instead of root
