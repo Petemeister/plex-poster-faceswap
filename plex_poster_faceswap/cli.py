@@ -13,6 +13,7 @@ import json
 import os
 import random
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import config, models
@@ -84,6 +85,21 @@ def process(item, cfg, plex, swapper, state, redo=False):
     return f"swapped - {msg}"
 
 
+@contextmanager
+def run_lock(cfg, wait):
+    """Only one pass at a time. Yields False if another is running and wait is False."""
+    with open(cfg.data_dir / ".lock", "w") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if not wait:
+                yield False
+                return
+            log("another run is in progress; waiting for it to finish...")
+            fcntl.flock(f, fcntl.LOCK_EX)
+        yield True
+
+
 def select(items, title):
     exact = [i for i in items if i.match.lower() == title.lower()]
     return exact or [i for i in items if title.lower() in i.match.lower()]
@@ -91,32 +107,35 @@ def select(items, title):
 
 def cmd_run(cfg, plex, a, redo_title=None):
     from .swapper import Swapper
-    state = State(cfg.state_file)
     swapper = None
     while True:
-        items = plex.items(cfg.libraries, cfg.to_local, a.library_names)
-        if redo_title:
-            todo = select(items, redo_title)
-            if not todo:
-                raise SystemExit(f"nothing in {cfg.libraries} matches {redo_title!r}")
-        else:
-            todo = [i for i in items if state.get(i.key).get("status") not in ("swapped", "no_face", "restored")
-                    and time.time() - i.added >= cfg.min_age_minutes * 60]
-            if a.only:
-                todo = [i for i in todo if a.only.lower() in i.match.lower()]
-            todo = todo[:a.limit] if a.limit else todo
-        if todo:
-            log(f"{len(items)} posters in {cfg.libraries}, {len(todo)} to do")
-            swapper = swapper or Swapper(models.ensure(cfg.models_dir, log), cfg.faces_dir, cfg.face_target,
-                                         cfg.threads, log)
-            for n, item in enumerate(todo, 1):
-                t = time.time()
-                try:
-                    msg = process(item, cfg, plex, swapper, state, redo=bool(redo_title))
-                except Exception as e:  # keep going; it is retried next run
-                    state.set(item.key, title=item.title, status="error", error=str(e)[:300])
-                    msg = f"ERROR {e}"
-                log(f"[{n}/{len(todo)}] {item.title}: {msg} ({time.time() - t:.0f}s)")
+        # a scheduled pass skips if a redo/restore is running; one-off commands wait for it
+        with run_lock(cfg, wait=bool(redo_title) or not cfg.schedule_minutes) as got:
+            if got:
+                state = State(cfg.state_file)  # re-read: a redo may have changed it since the last pass
+                items = plex.items(cfg.libraries, cfg.to_local, a.library_names)
+                if redo_title:
+                    todo = select(items, redo_title)
+                    if not todo:
+                        raise SystemExit(f"nothing in {cfg.libraries} matches {redo_title!r}")
+                else:
+                    todo = [i for i in items if state.get(i.key).get("status") not in ("swapped", "no_face", "restored")
+                            and time.time() - i.added >= cfg.min_age_minutes * 60]
+                    if a.only:
+                        todo = [i for i in todo if a.only.lower() in i.match.lower()]
+                    todo = todo[:a.limit] if a.limit else todo
+                if todo:
+                    log(f"{len(items)} posters in {cfg.libraries}, {len(todo)} to do")
+                    swapper = swapper or Swapper(models.ensure(cfg.models_dir, log), cfg.faces_dir, cfg.face_target,
+                                                 cfg.threads, log)
+                    for n, item in enumerate(todo, 1):
+                        t = time.time()
+                        try:
+                            msg = process(item, cfg, plex, swapper, state, redo=bool(redo_title))
+                        except Exception as e:  # keep going; it is retried next run
+                            state.set(item.key, title=item.title, status="error", error=str(e)[:300])
+                            msg = f"ERROR {e}"
+                        log(f"[{n}/{len(todo)}] {item.title}: {msg} ({time.time() - t:.0f}s)")
         if redo_title or not cfg.schedule_minutes:
             return
         time.sleep(cfg.schedule_minutes * 60)
@@ -193,17 +212,13 @@ def main():
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     if a.cmd == "status":
         return cmd_status(cfg)
-    lock = open(cfg.data_dir / ".lock", "w")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        raise SystemExit("another run is in progress")
     plex = Plex(cfg.plex_url, cfg.plex_token)
     if a.cmd == "run":
         cmd_run(cfg, plex, a)
     elif a.cmd == "redo":
         cmd_run(cfg, plex, a, redo_title=a.title)
     elif a.cmd == "restore":
-        cmd_restore(cfg, plex, a)
+        with run_lock(cfg, wait=True):
+            cmd_restore(cfg, plex, a)
     elif a.cmd == "preview":
-        cmd_preview(cfg, plex, a)
+        cmd_preview(cfg, plex, a)  # writes only to DATA_DIR/preview, so it needs no lock
